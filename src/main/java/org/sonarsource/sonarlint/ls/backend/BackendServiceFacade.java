@@ -35,6 +35,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import javax.annotation.Nullable;
 import org.apache.commons.lang3.StringUtils;
+import org.jetbrains.annotations.NotNull;
 import org.sonarsource.sonarlint.core.rpc.client.ClientJsonRpcLauncher;
 import org.sonarsource.sonarlint.core.rpc.client.SonarLintRpcClientDelegate;
 import org.sonarsource.sonarlint.core.rpc.impl.BackendJsonRpcLauncher;
@@ -76,6 +77,8 @@ public class BackendServiceFacade {
 
 
   private String omnisharpDirectory;
+  private String csharpOssPath;
+  private String csharpEnterprisePath;
 
   public BackendServiceFacade(SonarLintRpcClientDelegate rpcClient, LanguageClientLogger lsLogOutput, SonarLintExtendedLanguageClient client) {
     this(rpcClient, lsLogOutput, client, DEFAULT_INIT_TIMEOUT_SECONDS);
@@ -125,6 +128,14 @@ public class BackendServiceFacade {
     this.omnisharpDirectory = omnisharpDirectory;
   }
 
+  public void setCsharpOssPath(String csharpOssPath) {
+    this.csharpOssPath = csharpOssPath;
+  }
+
+  public void setCsharpEnterprisePath(String csharpEnterprisePath) {
+    this.csharpEnterprisePath = csharpEnterprisePath;
+  }
+
   public BackendInitParams getInitParams() {
     return initParams;
   }
@@ -146,11 +157,7 @@ public class BackendServiceFacade {
   private InitializeParams toInitParams(BackendInitParams initParams) {
     var telemetryEnabled = telemetry != null && telemetry.enabled();
     var clientNodeJsPath = StringUtils.isEmpty(initParams.getClientNodePath()) ? null : Path.of(initParams.getClientNodePath());
-    var languageSpecificRequirements = new LanguageSpecificRequirements(
-      clientNodeJsPath,
-      omnisharpDirectory != null ? new OmnisharpRequirementsDto(Path.of(omnisharpDirectory, "mono"),
-        Path.of(omnisharpDirectory, "net6"),
-        Path.of(omnisharpDirectory, "net472")) : null);
+    var languageSpecificRequirements = getLanguageSpecificRequirements(clientNodeJsPath);
     return new InitializeParams(
       new ClientConstantInfoDto("Visual Studio Code", initParams.getUserAgent()),
       new TelemetryClientConstantAttributesDto(initParams.getTelemetryProductKey(),
@@ -177,6 +184,20 @@ public class BackendServiceFacade {
       languageSpecificRequirements,
       true,
       null
+    );
+  }
+
+  @NotNull
+  private LanguageSpecificRequirements getLanguageSpecificRequirements(@Nullable Path clientNodeJsPath) {
+    var pathToOssCsharp = csharpOssPath == null ? null : Path.of(csharpOssPath);
+    var pathToEnterpriseCsharp = csharpEnterprisePath == null ? null : Path.of(csharpEnterprisePath);
+    return new LanguageSpecificRequirements(
+      clientNodeJsPath,
+      omnisharpDirectory != null ? new OmnisharpRequirementsDto(Path.of(omnisharpDirectory, "mono"),
+        Path.of(omnisharpDirectory, "net6"),
+        Path.of(omnisharpDirectory, "net472"),
+        pathToOssCsharp,
+        pathToEnterpriseCsharp) : null
     );
   }
 
