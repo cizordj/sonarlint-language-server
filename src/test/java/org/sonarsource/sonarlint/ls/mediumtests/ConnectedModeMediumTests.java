@@ -61,6 +61,7 @@ import org.junit.jupiter.api.condition.DisabledOnOs;
 import org.junit.jupiter.api.condition.OS;
 import org.junit.jupiter.api.extension.RegisterExtension;
 import org.sonar.api.utils.DateUtils;
+import org.sonarsource.sonarlint.core.commons.IssueSeverity;
 import org.sonarsource.sonarlint.core.commons.api.SonarLanguage;
 import org.sonarsource.sonarlint.core.rpc.protocol.backend.binding.GetBindingSuggestionParams;
 import org.sonarsource.sonarlint.core.rpc.protocol.backend.binding.GetSharedConnectedModeConfigFileParams;
@@ -633,7 +634,7 @@ class ConnectedModeMediumTests extends AbstractLanguageServerMediumTests {
       .extracting(Either::getRight)
       .extracting(CodeAction::getCommand)
       .extracting(Command::getCommand)
-      .containsExactlyInAnyOrder("SonarLint.QuickFixApplied", "SonarLint.ResolveIssue", "SonarLint.OpenRuleDescCodeAction");
+      .containsExactlyInAnyOrder("SonarLint.QuickFixApplied", "SonarLint.ResolveIssue", "SonarLint.ShowIssueDetailsCodeAction");
   }
 
   @Test
@@ -716,6 +717,22 @@ class ConnectedModeMediumTests extends AbstractLanguageServerMediumTests {
 
   @Test
   void shouldOpenHotspotDescription() {
+    mockWebServerExtension.addProtobufResponse("/api/rules/show.protobuf?key=" + PYTHON_S1313, Rules.ShowResponse.newBuilder()
+      .setRule(Rules.Rule.newBuilder()
+        .setKey(PYTHON_S1313)
+        .setName("fakeName")
+        .setLang("java")
+        .setHtmlNote("htmlNote")
+        .setDescriptionSections(Rules.Rule.DescriptionSections.newBuilder().build())
+        .setCleanCodeAttribute(Common.CleanCodeAttribute.CONVENTIONAL)
+        .setEducationPrinciples(Rules.Rule.EducationPrinciples.newBuilder().build())
+        .setSeverity(IssueSeverity.BLOCKER.name())
+        .setType(Common.RuleType.BUG)
+        .setHtmlDesc("htmlDesc")
+        .setImpacts(Rules.Rule.Impacts.newBuilder().build())
+        .build())
+      .build());
+
     mockNoIssuesNoHotspotsForProject();
     addConfigScope(folder1BaseDir.toUri().toString());
     var uriInFolder = folder1BaseDir.resolve("hotspot.py").toUri().toString();
@@ -724,8 +741,7 @@ class ConnectedModeMediumTests extends AbstractLanguageServerMediumTests {
 
     var diagnostic = client.getHotspots(uriInFolder).get(0);
     var hotspotId = ((JsonObject) diagnostic.getData()).get("entryKey").getAsString();
-    var ruleKey = diagnostic.getCode().getLeft();
-    var params = new SonarLintExtendedLanguageServer.ShowHotspotRuleDescriptionParams(ruleKey, hotspotId);
+    var params = new SonarLintExtendedLanguageServer.ShowHotspotRuleDescriptionParams(hotspotId, uriInFolder);
     params.setFileUri(uriInFolder);
 
     assertThat(lsProxy.showHotspotRuleDescription(params)).isNull();
@@ -748,7 +764,30 @@ class ConnectedModeMediumTests extends AbstractLanguageServerMediumTests {
 
   @Test
   void shouldReturnHotspotDetails() {
-    var testParams = new SonarLintExtendedLanguageServer.ShowHotspotRuleDescriptionParams("python:S930", "hotspotKey");
+    var PYTHON_S1313 = "python:S1313";
+    mockWebServerExtension.addProtobufResponse("/api/rules/show.protobuf?key=" + PYTHON_S1313, Rules.ShowResponse.newBuilder()
+      .setRule(Rules.Rule.newBuilder()
+        .setKey(PYTHON_S1313)
+        .setName("fakeName")
+        .setLang("java")
+        .setHtmlNote("htmlNote")
+        .setDescriptionSections(Rules.Rule.DescriptionSections.newBuilder().build())
+        .setCleanCodeAttribute(Common.CleanCodeAttribute.CONVENTIONAL)
+        .setEducationPrinciples(Rules.Rule.EducationPrinciples.newBuilder().build())
+        .setSeverity(IssueSeverity.BLOCKER.name())
+        .setType(Common.RuleType.BUG)
+        .setHtmlDesc("htmlDesc")
+        .setImpacts(Rules.Rule.Impacts.newBuilder().build())
+        .build())
+      .build());
+
+    var uriInFolder = folder1BaseDir.resolve("shouldReturnHotspotDetails.py").toUri().toString();
+    didOpen(uriInFolder, "python", "IP_ADDRESS = '12.34.56.78'\n");
+
+    awaitUntilAsserted(() -> assertThat(client.getHotspots(uriInFolder)).hasSize(1));
+
+    var hotspotId = ((JsonObject) client.getHotspots(uriInFolder).get(0).getData()).get("entryKey").getAsString();
+    var testParams = new SonarLintExtendedLanguageServer.ShowHotspotRuleDescriptionParams(PYTHON_S1313, hotspotId);
     testParams.setFileUri(folder1BaseDir.resolve("hotspot.py").toUri().toString());
 
     var result = lsProxy.getHotspotDetails(testParams);
@@ -756,10 +795,9 @@ class ConnectedModeMediumTests extends AbstractLanguageServerMediumTests {
     awaitUntilAsserted(() -> {
       assertTrue(result.isDone());
       assertThat(result.get().getLanguageKey()).isEqualTo("py");
-      assertThat(result.get().getName()).isEqualTo("The number and name of arguments passed to a function should match its parameters");
+      assertThat(result.get().getName()).isEqualTo("Using hardcoded IP addresses is security-sensitive");
     });
   }
-
 
   @Test
   void checkLocalDetectionSupportedNotBound() throws ExecutionException, InterruptedException {
